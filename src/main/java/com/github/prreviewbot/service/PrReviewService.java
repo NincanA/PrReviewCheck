@@ -43,16 +43,16 @@ public class PrReviewService {
             GitHub github = githubService.createGitHubClient(installationId);
             
             // Get PR diff
-            String diff = githubService.getPrDiff(github, repoInfo.getOwner(), 
+            String diffContent = githubService.getPrDiff(github, repoInfo.getOwner(), 
                                                 repoInfo.getRepo(), repoInfo.getPrNumber());
             
             // Analyze with LLM
-            String prTitle = pullRequest.get("title").asText();
-            String prDescription = pullRequest.get("body").asText();
+            String pullRequestTitle = pullRequest.get("title").asText();
+            String pullRequestDescription = pullRequest.get("body").asText();
             
             List<LlmService.ReviewSuggestion> suggestions = llmService
-                    .analyzeCodeChanges(diff, prTitle, prDescription)
-                    .block(); // Convert from reactive to blocking for simplicity
+                    .analyzeCodeChanges(diffContent , pullRequestTitle, prDescription)
+                    .block(); 
             
             // Post review comments
             for (LlmService.ReviewSuggestion suggestion : suggestions) {
