@@ -26,7 +26,7 @@ public class WebhookController {
     private final String webhookSecret;
     
     public WebhookController(WebhookService webhookService, 
-                           @Value("${github.app.webhook-secret}") String webhookSecret) {
+                           @Value("${github.webhook-secret}") String webhookSecret) {
         this.webhookService = webhookService;
         this.webhookSecret = webhookSecret;
     }
@@ -37,7 +37,7 @@ public class WebhookController {
             @RequestHeader(value = "X-Hub-Signature-256", required = false) String signature,
             @RequestBody String payload) {
         
-        logger.info("Received GitHub event: {}", event);
+        logger.error("Received GitHub event: {}", event );
         
         try {
             // Validate signature

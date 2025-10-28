@@ -17,7 +17,7 @@ public class LlmConfig {
     
     public static class OpenAi {
         private String apiKey;
-        private String model = "gpt-4";
+        private String model = "gpt-4o";
         private int maxTokens = 4000;
         
         // Getters and setters

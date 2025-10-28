@@ -29,7 +29,7 @@ llm:
   provider: ${LLM_PROVIDER:openai} # openai, anthropic, google
   openai:
     api-key: ${OPENAI_API_KEY:}
-    model: ${OPENAI_MODEL:gpt-4}
+    model: ${OPENAI_MODEL:gpt-4o}
     max-tokens: ${OPENAI_MAX_TOKENS:4000}
   anthropic:
     api-key: ${ANTHROPIC_API_KEY:}

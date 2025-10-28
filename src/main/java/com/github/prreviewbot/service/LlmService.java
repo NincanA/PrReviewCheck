@@ -1,15 +1,20 @@
 package com.github.prreviewbot.service;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.prreviewbot.config.LlmConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
@@ -68,25 +73,81 @@ public class LlmService {
                 return Mono.error(new IllegalArgumentException("Unsupported LLM provider"));
         }
     }
-    
+
     private Mono<List<ReviewSuggestion>> analyzeWithOpenAI(String prompt) {
         Map<String, Object> requestBody = Map.of(
-            "model", llmConfig.getOpenai().getModel(),
-            "messages", List.of(Map.of("role", "user", "content", prompt)),
-            "max_tokens", llmConfig.getOpenai().getMaxTokens(),
-            "temperature", 0.1
+                "model", llmConfig.getOpenai().getModel(),
+                "prompt", prompt,
+                "stream", false
         );
-        
+
+        WebClient webClient = WebClient.create();
+        logger.info("🟢 Request body: {}", requestBody);
+
         return webClient.post()
-                .uri("https://api.openai.com/v1/chat/completions")
-                .header("Authorization", "Bearer " + llmConfig.getOpenai().getApiKey())
-                .header("Content-Type", "application/json")
+                .uri("http://localhost:11434/api/generate")
+                .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
                 .bodyValue(requestBody)
-                .retrieve()
-                .bodyToMono(JsonNode.class)
-                .map(response -> parseOpenAIResponse(response));
+                .exchangeToMono(response -> {
+                    logger.info("📩 Status: {}", response.statusCode());
+
+                    return response.bodyToMono(String.class)
+                            .doOnNext(body -> logger.info("🧾 Raw Ollama Response: {}", body))
+                            .map(body -> {
+                                if (body == null || body.isBlank()) {
+                                    logger.warn("⚠️ Empty response body from Ollama");
+                                    return Collections.<ReviewSuggestion>emptyList();
+                                }
+
+                                try {
+
+                                    JsonNode json = objectMapper.readTree(body);
+                                    if (json.has("done_reason") &&
+                                            "load".equalsIgnoreCase(json.get("done_reason").asText())) {
+                                        logger.warn("⚠️ Model was still loading — empty response");
+                                        return Collections.<ReviewSuggestion>emptyList();
+                                    }
+
+                                    String responseText = json.has("response")
+                                            ? json.get("response").asText()
+                                            : body;
+
+                                    String cleaned = responseText.trim();
+
+                                    int start = cleaned.indexOf('[');
+                                    int end = cleaned.lastIndexOf(']');
+                                    if (start >= 0 && end >= 0) {
+                                        cleaned = cleaned.substring(start, end + 1);
+                                    }
+
+                                    cleaned = cleaned
+                                            .replaceAll(",\\s*([}\\]])", "$1")
+                                            .replaceAll("[^\\x20-\\x7E\\n\\r\\t]", "");
+
+                                    logger.info("🧹 Cleaned response text: {}", cleaned);
+
+                                    if (cleaned.isBlank() || !cleaned.startsWith("[")) {
+                                        logger.warn("⚠️ No valid JSON array detected in response");
+                                        return Collections.<ReviewSuggestion>emptyList();
+                                    }
+
+                                    List<ReviewSuggestion> suggestions = objectMapper.readValue(
+                                            cleaned,
+                                            new TypeReference<List<ReviewSuggestion>>() {}
+                                    );
+
+                                    logger.info("✅ Parsed {} suggestions", suggestions.size());
+                                    return suggestions;
+
+                                } catch (Exception e) {
+                                    logger.error("❌ Failed to parse Ollama response", e);
+                                    return Collections.<ReviewSuggestion>emptyList();
+                                }
+                            });
+                });
     }
-    
+
+
     private Mono<List<ReviewSuggestion>> analyzeWithAnthropic(String prompt) {
         Map<String, Object> requestBody = Map.of(
             "model", llmConfig.getAnthropic().getModel(),

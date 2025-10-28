@@ -1,5 +1,7 @@
 package com.github.prreviewbot.service;
 
+import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.SignatureAlgorithm;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.github.prreviewbot.config.GitHubConfig;
 import org.kohsuke.github.*;
@@ -8,7 +10,21 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStreamReader;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.security.KeyFactory;
+import java.security.NoSuchAlgorithmException;
+import java.security.PrivateKey;
+import java.security.spec.InvalidKeySpecException;
+import java.security.spec.PKCS8EncodedKeySpec;
+import java.time.Instant;
+import java.util.Base64;
+import java.util.Date;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -21,6 +37,7 @@ public class GitHubService {
     private static final Logger logger = LoggerFactory.getLogger(GitHubService.class);
     
     private final GitHubConfig githubConfig;
+    private String token;
     
     @Autowired
     public GitHubService(GitHubConfig githubConfig) {
@@ -30,24 +47,80 @@ public class GitHubService {
     /**
      * Creates authenticated GitHub client for app installation
      */
-    public GitHub createGitHubClient(long installationId) throws IOException {
-        GitHubBuilder builder = new GitHubBuilder()
-                .withAppInstallationToken(String.valueOf(installationId))
-                .withJwtToken(createJwtToken());
-        
-        return builder.build();
+    public GitHub createGitHubClient(long installationId)
+            throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
+
+        String pemFilePath = "/Users/ayush.bemera/github-pr-review-bot/src/main/resources/privateKey_pkcs8.pem";
+
+        // Read and clean up PEM file
+        String privateKeyPem = new String(Files.readAllBytes(Paths.get(pemFilePath)))
+                .replace("-----BEGIN PRIVATE KEY-----", "")
+                .replace("-----END PRIVATE KEY-----", "")
+                .replaceAll("\\s+", "");
+
+        // Decode and create PrivateKey object
+        byte[] keyBytes = Base64.getDecoder().decode(privateKeyPem);
+        PKCS8EncodedKeySpec keySpec = new PKCS8EncodedKeySpec(keyBytes);
+        KeyFactory keyFactory = KeyFactory.getInstance("RSA");
+        PrivateKey privateKey = keyFactory.generatePrivate(keySpec);
+
+        // Timestamps
+        Instant now = Instant.now();
+        Instant issuedAt = now.minusSeconds(60); // 60 sec ago for clock drift
+        Instant expiration = now.plusSeconds(600); // 10 minutes max
+
+        // Build JWT
+        String jwt = Jwts.builder()
+                .setIssuedAt(Date.from(issuedAt))
+                .setExpiration(Date.from(expiration))
+                .setIssuer(String.valueOf(2188473))  // GitHub App ID goes here
+                .signWith(privateKey, SignatureAlgorithm.RS256)
+                .compact();
+
+        System.out.println("Generated JWT:\n" + jwt);
+
+        // 1. Build GitHub client as App
+        GitHub gitHubApp = new GitHubBuilder()
+                .withJwtToken(jwt)
+                .build();
+
+        // 2. Use the App-authenticated client to get the installation and create an access token
+        GHAppInstallation installation = gitHubApp.getApp().getInstallationById(installationId);
+        GHAppInstallationToken instToken = installation.createToken().create();
+        token = instToken.getToken();
+
+        System.out.println("Generated Installation Token:\n" + token);
+
+        // 3. Build GitHub client authenticated as the installation
+        GitHub gitHubInstallation = new GitHubBuilder()
+                .withAppInstallationToken(token)
+                .build();
+
+        return gitHubInstallation;
     }
     
     /**
      * Fetches PR diff for analysis
      */
     public String getPrDiff(GitHub github, String owner, String repo, int prNumber) throws IOException {
+        logger.error("owner details: {} + repo details: {}\n", owner ,repo);
         GHRepository repository = github.getRepository(owner + "/" + repo);
         GHPullRequest pullRequest = repository.getPullRequest(prNumber);
-        
+        String diffUrl = pullRequest.getDiffUrl().toString();
+
+        String diffText;
+        try (BufferedReader in = new BufferedReader(
+                new InputStreamReader(new URL(diffUrl).openStream(), StandardCharsets.UTF_8))) {
+            diffText = in.lines().collect(Collectors.joining("\n"));
+        }
+
+        System.out.println(diffText);
+        logger.error("repository details: {}\n", repository);
+        logger.error("pullRequest details: {}", pullRequest);
+
         // Note: This method needs to be implemented based on the actual GitHub API
         // For now, we'll return a placeholder
-        return "PR diff for " + owner + "/" + repo + " #" + prNumber;
+        return diffText;
     }
     
     /**
@@ -90,7 +163,7 @@ public class GitHubService {
         try {
             // This is a simplified version - in production, you'd use a proper JWT library
             // For now, we'll return a placeholder token
-            logger.info("Creating JWT token for app ID: {}", githubConfig.getApp().getId());
+            logger.error("Creating JWT token for app ID: {}", githubConfig.getApp().getPrivateKey());
             return "placeholder-jwt-token";
         } catch (Exception e) {
             logger.error("Error creating JWT token", e);
@@ -128,5 +201,9 @@ public class GitHubService {
         public String getOwner() { return owner; }
         public String getRepo() { return repo; }
         public int getPrNumber() { return prNumber; }
+    }
+
+    public String getToken() {
+        return token;
     }
 }
