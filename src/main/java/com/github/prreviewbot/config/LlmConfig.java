@@ -10,14 +10,14 @@ import org.springframework.context.annotation.Configuration;
 @ConfigurationProperties(prefix = "llm")
 public class LlmConfig {
     
-    private String provider = "openai";
+    private String provider = "ollama";
     private OpenAi openai = new OpenAi();
     private Anthropic anthropic = new Anthropic();
     private Google google = new Google();
     
     public static class OpenAi {
         private String apiKey;
-        private String model = "gpt-4";
+        private String model = "gpt-4o";
         private int maxTokens = 4000;
         
         // Getters and setters
