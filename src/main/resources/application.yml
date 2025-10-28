@@ -1,0 +1,56 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: github-pr-review-bot
+  profiles:
+    active: dev
+
+logging:
+  level:
+    com.github.prreviewbot: DEBUG
+    org.springframework.web: DEBUG
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+
+# GitHub App Configuration
+github:
+  app:
+    id: ${GITHUB_APP_ID:}
+    private-key: ${GITHUB_PRIVATE_KEY:}
+    webhook-secret: ${GITHUB_WEBHOOK_SECRET:}
+  bot:
+    name: ${GITHUB_BOT_NAME:pr-review-bot}
+
+# LLM Configuration
+llm:
+  provider: ${LLM_PROVIDER:openai} # openai, anthropic, google
+  openai:
+    api-key: ${OPENAI_API_KEY:}
+    model: ${OPENAI_MODEL:gpt-4o}
+    max-tokens: ${OPENAI_MAX_TOKENS:4000}
+  anthropic:
+    api-key: ${ANTHROPIC_API_KEY:}
+    model: ${ANTHROPIC_MODEL:claude-3-sonnet-20240229}
+    max-tokens: ${ANTHROPIC_MAX_TOKENS:4000}
+  google:
+    api-key: ${GOOGLE_API_KEY:}
+    model: ${GOOGLE_MODEL:gemini-pro}
+    max-tokens: ${GOOGLE_MAX_TOKENS:4000}
+
+# Review Configuration
+review:
+  max-files-per-pr: ${MAX_FILES_PER_PR:50}
+  max-lines-per-file: ${MAX_LINES_PER_FILE:1000}
+  enable-conversational-features: ${ENABLE_CONVERSATIONAL_FEATURES:true}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always
