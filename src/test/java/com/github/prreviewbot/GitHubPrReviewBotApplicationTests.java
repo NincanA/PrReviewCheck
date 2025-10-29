@@ -8,7 +8,7 @@ import org.springframework.test.context.TestPropertySource;
 @TestPropertySource(properties = {
     "github.app.id=test",
     "github.app.private-key=test",
-    "github.app.webhook-secret=test",
+    "github.webhook-secret=test",
     "llm.provider=openai",
     "openai.api-key=test"
 })
